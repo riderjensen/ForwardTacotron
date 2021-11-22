@@ -162,7 +162,7 @@ class ForwardTacotron(nn.Module):
         num_params = sum([np.prod(p.size()) for p in self.parameters()])
         return f'ForwardTacotron, num params: {num_params}'
 
-    def forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, batch: Dict[str, torch.Tensor], train=True) -> Dict[str, torch.Tensor]:
         x = batch['x']
         mel = batch['mel']
         dur = batch['dur']
@@ -183,10 +183,13 @@ class ForwardTacotron(nn.Module):
                 t1 = t2
         ada_in[ada_in != ada_in] = 0
         ada_target = self.phon_train_pred(ada_in)
+
         ada_hat = self.phon_pred(x)
 
-        ada_series = self.phon_series_lin(ada_target)
-        ada_out = self.phon_lin(ada_target)
+        ada_target_in = ada_target if train else ada_hat
+
+        ada_series = self.phon_series_lin(ada_target_in)
+        ada_out = self.phon_lin(ada_target_in)
 
         dur_hat = self.dur_pred(x, ada_series).squeeze(-1)
         pitch_hat = self.pitch_pred(x, ada_series).transpose(1, 2)
