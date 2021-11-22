@@ -174,7 +174,7 @@ class ForwardTacotron(nn.Module):
             self.step += 1
 
         B, T = x.size()
-        ada_in = torch.zeros((B, 80, T))
+        ada_in = torch.zeros((B, 80, T), device=x.device)
         for b in range(B):
             t1 = 0
             for t in range(T):
