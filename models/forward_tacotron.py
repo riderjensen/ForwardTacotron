@@ -237,15 +237,15 @@ class ForwardTacotron(nn.Module):
         with torch.no_grad():
 
             ada_hat = self.phon_pred(x)
-            ada_hat = self.phon_series_lin(ada_hat)
+            ada_series = self.phon_series_lin(ada_hat)
 
-            dur_hat = self.dur_pred(x, ada=ada_hat, alpha=alpha)
+            dur_hat = self.dur_pred(x, ada=ada_series, alpha=alpha)
             dur_hat = dur_hat.squeeze(2)
             if torch.sum(dur_hat.long()) <= 0:
                 torch.fill_(dur_hat, value=2.)
-            pitch_hat = self.pitch_pred(x, ada=ada_hat).transpose(1, 2)
+            pitch_hat = self.pitch_pred(x, ada=ada_series).transpose(1, 2)
             pitch_hat = pitch_function(pitch_hat)
-            energy_hat = self.energy_pred(x, ada=ada_hat).transpose(1, 2)
+            energy_hat = self.energy_pred(x, ada=ada_series).transpose(1, 2)
             energy_hat = energy_function(energy_hat)
             return self._generate_mel(x=x, dur_hat=dur_hat,
                                       pitch_hat=pitch_hat,
@@ -266,7 +266,7 @@ class ForwardTacotron(nn.Module):
             energy_hat = self.energy_pred(x).transpose(1, 2)
             return self._generate_mel(x=x, dur_hat=dur_hat,
                                       pitch_hat=pitch_hat,
-                                      energy_hat=energy_hat)
+                                      energy_hat=energy_hat, ada_hat=None)
 
     def get_step(self) -> int:
         return self.step.data.item()
