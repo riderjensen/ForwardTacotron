@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import Embedding
+from torch.nn import Embedding, Sequential, Conv1d, LayerNorm, ReLU, Linear
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
 
 from models.common_layers import CBHG, LengthRegulator
@@ -13,7 +13,7 @@ from utils.text.symbols import phonemes
 
 class SeriesPredictor(nn.Module):
 
-    def __init__(self, num_chars, emb_dim=64, conv_dims=256, rnn_dims=64, dropout=0.5):
+    def __init__(self, num_chars, emb_dim=64, conv_dims=256, rnn_dims=64, dropout=0.5, out_dim=1):
         super().__init__()
         self.embedding = Embedding(num_chars, emb_dim)
         self.convs = torch.nn.ModuleList([
@@ -22,13 +22,16 @@ class SeriesPredictor(nn.Module):
             BatchNormConv(conv_dims, conv_dims, 5, relu=True),
         ])
         self.rnn = nn.GRU(conv_dims, rnn_dims, batch_first=True, bidirectional=True)
-        self.lin = nn.Linear(2 * rnn_dims, 1)
+        self.lin = nn.Linear(2 * rnn_dims, out_dim)
         self.dropout = dropout
 
     def forward(self,
                 x: torch.Tensor,
+                ada: torch.Tensor = None,
                 alpha: float = 1.0) -> torch.Tensor:
         x = self.embedding(x)
+        if ada is not None:
+            x = x + ada
         x = x.transpose(1, 2)
         for conv in self.convs:
             x = conv(x)
@@ -38,6 +41,22 @@ class SeriesPredictor(nn.Module):
         x = self.lin(x)
         return x / alpha
 
+
+class PhonPredictor(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = BatchNormConv(80, 256, 3, relu=True)
+        self.conv2 = BatchNormConv(256, 256, 3, relu=True)
+        self.lin = Linear(256, 4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = x.transpose(1, 2)
+        x = self.lin(x)
+        return x
+        
 
 class BatchNormConv(nn.Module):
 
@@ -88,6 +107,18 @@ class ForwardTacotron(nn.Module):
         self.padding_value = padding_value
         self.embedding = nn.Embedding(num_chars, embed_dims)
         self.lr = LengthRegulator()
+
+        self.phon_pred = SeriesPredictor(num_chars=num_chars,
+                                         emb_dim=series_embed_dims,
+                                         conv_dims=durpred_conv_dims,
+                                         rnn_dims=durpred_rnn_dims,
+                                         dropout=durpred_dropout,
+                                         out_dim=4)
+
+        self.phon_train_pred = PhonPredictor()
+        self.phon_lin = Linear(4, embed_dims)
+        self.phon_series_lin = Linear(4, series_embed_dims)
+
         self.dur_pred = SeriesPredictor(num_chars=num_chars,
                                         emb_dim=series_embed_dims,
                                         conv_dims=durpred_conv_dims,
@@ -142,11 +173,27 @@ class ForwardTacotron(nn.Module):
         if self.training:
             self.step += 1
 
-        dur_hat = self.dur_pred(x).squeeze(-1)
-        pitch_hat = self.pitch_pred(x).transpose(1, 2)
-        energy_hat = self.energy_pred(x).transpose(1, 2)
+        B, T = x.size()
+        ada_in = torch.zeros((B, 80, T))
+        for b in range(B):
+            t1 = 0
+            for t in range(T):
+                t2 = t1 + int(dur[b, t])
+                ada_in[b, :, t] = mel[b, :, t1:t2].mean(dim=1)
+                t1 = t2
+        ada_in[ada_in != ada_in] = 0
+        ada_target = self.phon_train_pred(ada_in)
+        ada_hat = self.phon_pred(x)
+
+        ada_series = self.phon_series_lin(ada_target)
+        ada_out = self.phon_lin(ada_target)
+
+        dur_hat = self.dur_pred(x, ada_series).squeeze(-1)
+        pitch_hat = self.pitch_pred(x, ada_series).transpose(1, 2)
+        energy_hat = self.energy_pred(x, ada_series).transpose(1, 2)
 
         x = self.embedding(x)
+        x = x + ada_out
         x = x.transpose(1, 2)
         x = self.prenet(x)
 
@@ -178,7 +225,8 @@ class ForwardTacotron(nn.Module):
         x = self._pad(x, mel.size(2))
 
         return {'mel': x, 'mel_post': x_post,
-                'dur': dur_hat, 'pitch': pitch_hat, 'energy': energy_hat}
+                'dur': dur_hat, 'pitch': pitch_hat, 'energy': energy_hat,
+                'ada_hat': ada_hat, 'ada_target': ada_target}
 
     def generate(self,
                  x: torch.Tensor,
@@ -187,17 +235,22 @@ class ForwardTacotron(nn.Module):
                  energy_function: Callable[[torch.Tensor], torch.Tensor] = lambda x: x) -> Dict[str, torch.Tensor]:
         self.eval()
         with torch.no_grad():
-            dur_hat = self.dur_pred(x, alpha=alpha)
+
+            ada_hat = self.phon_pred(x)
+            ada_hat = self.phon_series_lin(ada_hat)
+
+            dur_hat = self.dur_pred(x, ada=ada_hat, alpha=alpha)
             dur_hat = dur_hat.squeeze(2)
             if torch.sum(dur_hat.long()) <= 0:
                 torch.fill_(dur_hat, value=2.)
-            pitch_hat = self.pitch_pred(x).transpose(1, 2)
+            pitch_hat = self.pitch_pred(x, ada=ada_hat).transpose(1, 2)
             pitch_hat = pitch_function(pitch_hat)
-            energy_hat = self.energy_pred(x).transpose(1, 2)
+            energy_hat = self.energy_pred(x, ada=ada_hat).transpose(1, 2)
             energy_hat = energy_function(energy_hat)
             return self._generate_mel(x=x, dur_hat=dur_hat,
                                       pitch_hat=pitch_hat,
-                                      energy_hat=energy_hat)
+                                      energy_hat=energy_hat,
+                                      ada_hat=ada_hat)
 
     @torch.jit.export
     def generate_jit(self,
@@ -222,8 +275,11 @@ class ForwardTacotron(nn.Module):
                       x: torch.Tensor,
                       dur_hat: torch.Tensor,
                       pitch_hat: torch.Tensor,
+                      ada_hat: torch.Tensor,
                       energy_hat: torch.Tensor) -> Dict[str, torch.Tensor]:
         x = self.embedding(x)
+        ada = self.phon_lin(ada_hat)
+        x = x + ada
         x = x.transpose(1, 2)
         x = self.prenet(x)
 

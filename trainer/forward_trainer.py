@@ -85,6 +85,7 @@ class ForwardTrainer:
 
                 m1_loss = self.l1_loss(pred['mel'], batch['mel'], batch['mel_len'])
                 m2_loss = self.l1_loss(pred['mel_post'], batch['mel'], batch['mel_len'])
+                ada_loss = self.l1_loss(pred['ada_hat'], pred['ada_target'].detach(), batch['x_len'])
 
                 dur_loss = self.l1_loss(pred['dur'].unsqueeze(1), batch['dur'].unsqueeze(1), batch['x_len'])
                 pitch_loss = self.l1_loss(pred['pitch'], pitch_target.unsqueeze(1), batch['x_len'])
@@ -93,7 +94,8 @@ class ForwardTrainer:
                 loss = m1_loss + m2_loss \
                        + self.train_cfg['dur_loss_factor'] * dur_loss \
                        + self.train_cfg['pitch_loss_factor'] * pitch_loss \
-                       + self.train_cfg['energy_loss_factor'] * energy_loss
+                       + self.train_cfg['energy_loss_factor'] * energy_loss \
+                       + 0.1 * ada_loss
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -122,6 +124,7 @@ class ForwardTrainer:
                     self.generate_plots(model, session)
 
                 self.writer.add_scalar('Mel_Loss/train', m1_loss + m2_loss, model.get_step())
+                self.writer.add_scalar('Ada_Loss/train', ada_loss, model.get_step())
                 self.writer.add_scalar('Pitch_Loss/train', pitch_loss, model.get_step())
                 self.writer.add_scalar('Energy_Loss/train', energy_loss, model.get_step())
                 self.writer.add_scalar('Duration_Loss/train', dur_loss, model.get_step())
