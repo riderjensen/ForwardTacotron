@@ -110,9 +110,9 @@ class ForwardTacotron(nn.Module):
 
         self.phon_pred = SeriesPredictor(num_chars=num_chars,
                                          emb_dim=series_embed_dims,
-                                         conv_dims=durpred_conv_dims,
-                                         rnn_dims=durpred_rnn_dims,
-                                         dropout=durpred_dropout,
+                                         conv_dims=pitch_conv_dims,
+                                         rnn_dims=pitch_rnn_dims,
+                                         dropout=pitch_dropout,
                                          out_dim=4)
 
         self.phon_train_pred = PhonPredictor()
