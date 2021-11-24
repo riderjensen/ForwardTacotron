@@ -104,7 +104,7 @@ class ForwardTacotron(nn.Module):
                  prenet_num_highways: int,
                  postnet_dropout: float,
                  n_mels: int,
-                 emb_rnn_checkpoint='/Users/cschaefe/workspace/NLG/char-rnn.pt',
+                 emb_rnn_checkpoint='/home/sysgen/chris/workspace/NLG/char-rnn.pt',
                  padding_value=-11.5129):
         super().__init__()
 
