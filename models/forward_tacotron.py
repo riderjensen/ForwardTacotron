@@ -28,8 +28,8 @@ class RNN(nn.Module):
     def embed(self, x):
         with torch.no_grad():
             x = self.embedding(x)
-            x, _ = self.rnn(x)
-        return x
+            x, h, c = self.rnn(x)
+        return h
 
 
 class SeriesPredictor(nn.Module):
@@ -254,7 +254,7 @@ class ForwardTacotron(nn.Module):
                       dur_hat: torch.Tensor,
                       pitch_hat: torch.Tensor,
                       energy_hat: torch.Tensor) -> Dict[str, torch.Tensor]:
-        x = self.embedding(x)
+        x = self.emb_rnn.embed(x)
         x = x.transpose(1, 2)
         x = self.prenet(x)
 
