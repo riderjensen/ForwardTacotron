@@ -28,7 +28,7 @@ class RNN(nn.Module):
     def embed(self, x):
         with torch.no_grad():
             x = self.embedding(x)
-            x, h, c = self.rnn(x)
+            x, (h, c) = self.rnn(x)
         return h
 
 
