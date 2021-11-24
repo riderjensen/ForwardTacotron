@@ -11,11 +11,33 @@ from models.common_layers import CBHG, LengthRegulator
 from utils.text.symbols import phonemes
 
 
+class RNN(nn.Module):
+
+    def __init__(self, input_size, output_size, hidden_size):
+        super(RNN, self).__init__()
+        self.embedding = nn.Embedding(input_size, 128)
+        self.rnn = nn.LSTM(input_size=128, hidden_size=hidden_size, num_layers=1)
+        self.decoder = nn.Linear(hidden_size, output_size)
+
+    def forward(self, input_seq, hidden_state):
+        embedding = self.embedding(input_seq)
+        output, hidden_state = self.rnn(embedding, hidden_state)
+        output = self.decoder(output)
+        return output, (hidden_state[0].detach(), hidden_state[1].detach())
+
+    def embed(self, x):
+        with torch.no_grad():
+            x = self.embedding(x)
+            x, _ = self.rnn(x)
+        return x
+
+
 class SeriesPredictor(nn.Module):
 
-    def __init__(self, num_chars, emb_dim=64, conv_dims=256, rnn_dims=64, dropout=0.5):
+    def __init__(self, emb_rnn, emb_dim=64, conv_dims=256, rnn_dims=64, dropout=0.5):
         super().__init__()
-        self.embedding = Embedding(num_chars, emb_dim)
+        emb_dim = 1024
+        self.emb_rnn = emb_rnn
         self.convs = torch.nn.ModuleList([
             BatchNormConv(emb_dim, conv_dims, 5, relu=True),
             BatchNormConv(conv_dims, conv_dims, 5, relu=True),
@@ -28,7 +50,7 @@ class SeriesPredictor(nn.Module):
     def forward(self,
                 x: torch.Tensor,
                 alpha: float = 1.0) -> torch.Tensor:
-        x = self.embedding(x)
+        x = self.emb_rnn.embed(x)
         x = x.transpose(1, 2)
         for conv in self.convs:
             x = conv(x)
@@ -82,23 +104,31 @@ class ForwardTacotron(nn.Module):
                  prenet_num_highways: int,
                  postnet_dropout: float,
                  n_mels: int,
+                 emb_rnn_checkpoint='/Users/cschaefe/workspace/NLG/char-rnn.pt',
                  padding_value=-11.5129):
         super().__init__()
+
+        embed_dims = 1024
+        self.emb_rnn = RNN(input_size=num_chars, output_size=num_chars, hidden_size=1024)
+        if emb_rnn_checkpoint is not None:
+            print(f'loading emb rnn: {emb_rnn_checkpoint}')
+            ckp = torch.load(emb_rnn_checkpoint, map_location=torch.device('cpu'))
+            self.emb_rnn.load_state_dict(ckp)
+
         self.rnn_dims = rnn_dims
         self.padding_value = padding_value
-        self.embedding = nn.Embedding(num_chars, embed_dims)
         self.lr = LengthRegulator()
-        self.dur_pred = SeriesPredictor(num_chars=num_chars,
+        self.dur_pred = SeriesPredictor(emb_rnn=self.emb_rnn,
                                         emb_dim=series_embed_dims,
                                         conv_dims=durpred_conv_dims,
                                         rnn_dims=durpred_rnn_dims,
                                         dropout=durpred_dropout)
-        self.pitch_pred = SeriesPredictor(num_chars=num_chars,
+        self.pitch_pred = SeriesPredictor(emb_rnn=self.emb_rnn,
                                           emb_dim=series_embed_dims,
                                           conv_dims=pitch_conv_dims,
                                           rnn_dims=pitch_rnn_dims,
                                           dropout=pitch_dropout)
-        self.energy_pred = SeriesPredictor(num_chars=num_chars,
+        self.energy_pred = SeriesPredictor(emb_rnn=self.emb_rnn,
                                            emb_dim=series_embed_dims,
                                            conv_dims=energy_conv_dims,
                                            rnn_dims=energy_rnn_dims,
@@ -146,7 +176,8 @@ class ForwardTacotron(nn.Module):
         pitch_hat = self.pitch_pred(x).transpose(1, 2)
         energy_hat = self.energy_pred(x).transpose(1, 2)
 
-        x = self.embedding(x)
+        #x = self.embedding(x)
+        x = self.emb_rnn.embed(x)
         x = x.transpose(1, 2)
         x = self.prenet(x)
 
