@@ -34,7 +34,7 @@ class RNN(nn.Module):
             for t in range(T):
                 x_t = x[:, t:t+1, :]
                 _, h = self.rnn(x_t, h)
-                hidden_out.append(h[0].squeeze())
+                hidden_out.append(h[0].squeeze(0))
         emb = torch.stack(hidden_out, dim=1).to(x.device)
         return emb
 
