@@ -16,7 +16,7 @@ class RNN(nn.Module):
     def __init__(self, input_size, output_size, hidden_size):
         super(RNN, self).__init__()
         self.embedding = nn.Embedding(input_size, 128)
-        self.rnn = nn.LSTM(input_size=128, hidden_size=hidden_size, num_layers=1)
+        self.rnn = nn.LSTM(input_size=128, hidden_size=hidden_size, num_layers=1, batch_first=True)
         self.decoder = nn.Linear(hidden_size, output_size)
 
     def forward(self, input_seq, hidden_state):
@@ -26,11 +26,17 @@ class RNN(nn.Module):
         return output, (hidden_state[0].detach(), hidden_state[1].detach())
 
     def embed(self, x):
+        B, T = x.size()
+        hidden_out = []
+        h = None
+        x = self.embedding(x)
         with torch.no_grad():
-            x = self.embedding(x)
-            x, _ = self.rnn(x)
-        return x
-
+            for t in range(T):
+                x_t = x[:, t:t+1, :]
+                _, h = self.rnn(x_t, h)
+                hidden_out.append(h[0].squeeze())
+        emb = torch.stack(hidden_out, dim=1).to(x.device)
+        return emb
 
 class SeriesPredictor(nn.Module):
 
@@ -104,7 +110,7 @@ class ForwardTacotron(nn.Module):
                  prenet_num_highways: int,
                  postnet_dropout: float,
                  n_mels: int,
-                 emb_rnn_checkpoint='/home/sysgen/chris/workspace/NLG/char-rnn.pt',
+                 emb_rnn_checkpoint=None, #'/home/sysgen/chris/workspace/NLG/char-rnn.pt',
                  padding_value=-11.5129):
         super().__init__()
 
