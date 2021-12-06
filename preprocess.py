@@ -118,7 +118,7 @@ if __name__ == '__main__':
                                 cleaner=cleaner,
                                 lang=config['preprocessing']['language'])
 
-    for i, (item_id, length, cleaned_text) in enumerate(pool.imap_unordered(preprocessor, wav_files), 1):
+    for i, (item_id, length, cleaned_text) in enumerate(pool.map(preprocessor, wav_files), 1):
         if item_id in text_dict:
             dataset += [(item_id, length)]
             cleaned_texts += [(item_id, cleaned_text)]
