@@ -1,5 +1,6 @@
 import argparse
 from multiprocessing import Pool, cpu_count
+from concurrent.futures.process import ProcessPoolExecutor
 from random import Random
 from typing import Tuple, Dict
 
@@ -105,7 +106,9 @@ if __name__ == '__main__':
         ('Num Validation', config['preprocessing']['n_val'])
     ])
 
-    pool = Pool(processes=n_workers)
+    # pool = Pool(processes=n_workers)
+    pool = ProcessPoolExecutor(max_workers=n_workers)
+    pool.submit(lambda: None)  # Force the pool to launch some child processes.
     dataset = []
     cleaned_texts = []
     cleaner = Cleaner.from_config(config)
@@ -122,6 +125,10 @@ if __name__ == '__main__':
         bar = progbar(i, len(wav_files))
         message = f'{bar} {i}/{len(wav_files)} '
         stream(message)
+
+    print('Shutting down pool')
+    pool.shutdown()
+    print('Pool closed')
 
     dataset.sort()
     random = Random(42)
