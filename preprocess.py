@@ -76,7 +76,7 @@ parser = argparse.ArgumentParser(description='Preprocessing for WaveRNN and Taco
 parser.add_argument('--path', '-p', help='directly point to dataset path')
 parser.add_argument('--num_workers', '-w', metavar='N', type=valid_n_workers, default=cpu_count()-1, help='The number of worker threads to use for preprocessing')
 parser.add_argument('--config', metavar='FILE', default='config.yaml', help='The config containing all hyperparams.')
-parser.add_argument('--batch_size', default="50", help="The amount of files to process in a batch before a pool restarts.")
+parser.add_argument('--batch_size', default=50, help="The amount of files to process in a batch before a pool restarts.")
 args = parser.parse_args()
 
 
@@ -119,7 +119,7 @@ if __name__ == '__main__':
                                 lang=config['preprocessing']['language'])
 
     batch_size = args.batch_size
-    batch_amount = math.ceil(len(wav_files) / batch_size)
+    batch_amount = math.ceil(len(wav_files) / int(batch_size))
 
     for x in range(batch_amount):
         print(f'Starting batch {x} our of {batch_amount}')
