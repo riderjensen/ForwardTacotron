@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Tuple, Dict, Any, Union
 import numpy as np
 import torch
+import time
 
 from models.fast_pitch import FastPitch
 from models.fatchord_version import WaveRNN
@@ -43,6 +44,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='TTS Generator')
     parser.add_argument('--input_text', '-i', default=None, type=str, help='[string] Type in something here and TTS will generate it!')
     parser.add_argument('--checkpoint', type=str, default=None, help='[string/path] path to .pt model file.')
+    parser.add_argument('--path', type=str, default=None, help='[string/path] path output folder.')
+    parser.add_argument('--name', type=str, default=None, help='[string/path] name of file.')
     parser.add_argument('--config', metavar='FILE', default='config.yaml', help='The config containing all hyperparams. Only'
                                                                                 'used if no checkpoint is set.')
     parser.add_argument('--alpha', type=float, default=1., help='Parameter for controlling length regulator for speedup '
@@ -79,7 +82,12 @@ if __name__ == '__main__':
         voc_model, voc_config = load_wavernn(args.voc_checkpoint)
         voc_dsp = DSP.from_config(voc_config)
 
-    out_path = Path('model_outputs')
+    out_path = args.path
+    if out_path is None:
+        out_path = Path('model_outputs')
+    else:
+        out_path = Path(args.path)
+
     out_path.mkdir(parents=True, exist_ok=True)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     tts_model.to(device)
@@ -109,8 +117,13 @@ if __name__ == '__main__':
         x = cleaner(x)
         x = tokenizer(x)
         x = torch.as_tensor(x, dtype=torch.long, device=device).unsqueeze(0)
-
-        wav_name = f'{i}_forward_{tts_k}k_alpha{args.alpha}_amp{args.amp}_{args.vocoder}'
+        
+        wav_name = args.name
+        if wav_name is None:
+            wav_name = f'{i}_forward_{tts_k}k_alpha{args.alpha}_amp{args.amp}_{args.vocoder}'
+        else:
+            creation_time = int(round(time.time() * 1000))
+            wav_name = f'{creation_time}_{args.name}'
 
         gen = tts_model.generate(x=x,
                                  alpha=args.alpha,
