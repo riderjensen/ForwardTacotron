@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Tuple, Dict, Any, Union
 import numpy as np
 import torch
-import time
 
 from models.fast_pitch import FastPitch
 from models.fatchord_version import WaveRNN
@@ -122,8 +121,7 @@ if __name__ == '__main__':
         if wav_name is None:
             wav_name = f'{i}_forward_{tts_k}k_alpha{args.alpha}_amp{args.amp}_{args.vocoder}'
         else:
-            creation_time = int(round(time.time() * 1000))
-            wav_name = f'{creation_time}_{args.name}'
+            wav_name = f'{args.name}'
 
         gen = tts_model.generate(x=x,
                                  alpha=args.alpha,
