@@ -138,7 +138,7 @@ if __name__ == '__main__':
     batch_amount = math.ceil(len(wav_files) / int(batch_size))
 
     for x in range(batch_amount):
-        print(f'Starting batch {x} our of {batch_amount}')
+        print(f'Starting batch {x} out of {batch_amount}')
         pool = ProcessPoolExecutor(max_workers=n_workers)
 
         start = x*batch_size
