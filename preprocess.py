@@ -1,6 +1,8 @@
 import argparse
+import math
+from multiprocessing import cpu_count
+from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import dataclass
-from multiprocessing import Pool, cpu_count
 from random import Random
 
 import pyworld as pw
@@ -91,6 +93,7 @@ parser = argparse.ArgumentParser(description='Preprocessing for WaveRNN and Taco
 parser.add_argument('--path', '-p', help='directly point to dataset path')
 parser.add_argument('--num_workers', '-w', metavar='N', type=valid_n_workers, default=cpu_count()-1, help='The number of worker threads to use for preprocessing')
 parser.add_argument('--config', metavar='FILE', default='config.yaml', help='The config containing all hyperparams.')
+parser.add_argument('--batch_size', default=500, help="The amount of files to process in a batch before a pool restarts.")
 args = parser.parse_args()
 
 
@@ -122,7 +125,6 @@ if __name__ == '__main__':
         ('Num Validation', config['preprocessing']['n_val'])
     ])
 
-    pool = Pool(processes=n_workers)
     dataset = []
     cleaned_texts = []
     cleaner = Cleaner.from_config(config)
@@ -132,13 +134,30 @@ if __name__ == '__main__':
                                 cleaner=cleaner,
                                 lang=config['preprocessing']['language'])
 
-    for i, dp in enumerate(pool.imap_unordered(preprocessor, wav_files), 1):
-        if dp is not None and dp.item_id in text_dict:
-            dataset += [(dp.item_id, dp.mel_len)]
-            cleaned_texts += [(dp.item_id, dp.text)]
-        bar = progbar(i, len(wav_files))
-        message = f'{bar} {i}/{len(wav_files)} '
-        stream(message)
+    batch_size = args.batch_size
+    batch_amount = math.ceil(len(wav_files) / int(batch_size))
+
+    for x in range(batch_amount):
+        print(f'Starting batch {x} our of {batch_amount}')
+        pool = ProcessPoolExecutor(max_workers=n_workers)
+
+        start = x*batch_size
+        finish = (x+1)*batch_size
+        wav_files_batch = wav_files[start:finish]
+
+        for i, dp in enumerate(pool.map(preprocessor, wav_files_batch), 1):
+            if dp is not None and dp.item_id in text_dict:
+                dataset += [(dp.item_id, dp.mel_len)]
+                cleaned_texts += [(dp.item_id, dp.text)]
+            bar = progbar(i, len(wav_files_batch))
+            message = f'{bar} {i}/{len(wav_files_batch)} '
+            stream(message)
+
+        print('\nShutting down pool')
+        try:
+            pool.shutdown(wait=True)
+        except Exception as e:
+            logging.error(traceback.format_exc())
 
     dataset.sort()
     random = Random(42)
